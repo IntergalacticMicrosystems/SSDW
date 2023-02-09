@@ -27,11 +27,7 @@ ssdw-send.py sets the track/head/sectors based on the file size
 
 **To write an image to drive A on the vintage PC:**
 
-Modern PC:
-
-```
-python ssdw-send.py --file dos360k.img --drive 0 --port COM1 --baud 9600
-```
+Start on the Vintage PC first
 
 Vintage PC:
 
@@ -39,3 +35,8 @@ Vintage PC:
 ssdw 1 2
 ```
 
+Modern PC:
+
+```
+python ssdw-send.py --file dos360k.img --drive 0 --port COM1 --baud 9600
+```
