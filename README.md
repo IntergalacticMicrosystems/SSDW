@@ -2,6 +2,7 @@
 
 ### ***USE AT YOUR OWN RISK!***
 ### ***This code has very little sanity checking***
+### ***And yes, I know it's hot garbage :)***
 
 A tool to push disk images from a modern PC to a vintage DOS 8086+ system.
 
