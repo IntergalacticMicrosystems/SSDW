@@ -1,120 +1,108 @@
-     1                                  [map symbols ssdw.map]
-     2                                  
-     3                                  %include "ssdw.mac"
-     1                              <1> %ifndef SSDW_MAC
-     2                              <1>     %define SSDW_MAC
-     3                              <1>     %macro outb 2
-     4                              <1>         mov dx, %1
-     5                              <1>         mov al, %2
-     6                              <1>         out dx, al
-     7                              <1>     %endmacro
-     8                              <1> 
-     9                              <1>     %macro inb 1
-    10                              <1>         mov dx, %1
-    11                              <1>         in al, dx
-    12                              <1>     %endmacro
-    13                              <1> 
-    14                              <1>     %macro savmain 0
-    15                              <1>             push ax
-    16                              <1>             push bx
-    17                              <1>             push cx
-    18                              <1>             push dx
-    19                              <1>     %endmacro
-    20                              <1> 
-    21                              <1>     %macro restmain 0
-    22                              <1>             pop dx
-    23                              <1>             pop cx
-    24                              <1>             pop bx
-    25                              <1>             pop ax
-    26                              <1>     %endmacro 
-    27                              <1> %endif
-    28                              <1> 
-     4                                  
-     5                                  bits 16
-     6                                  cpu 8086
-     7                                  
-     8                                  comio 		equ 	0x3f8	; 0x3f8 = COM1,  0x2f8 = COM2
-     9                                  com_mult 	equ		0x01 	; 30=2400, 0C=9600,
-    10                                  							; 06=19200, 03=38400, 
-    11                                  							; 02=57600, 01=115200
-    12                                  
-    13                                  cmd_recv_sector equ 	0x00		; cmd: 00, sector # (0-17) , NA
-    14                                  cmd_write_track equ 	0x01		; cmd: 01, drive #, track #, head #, sectors to write
-    15                                  cmd_reset 		equ 	0x08		; TODO cmd: 08, drive #
-    16                                  cmd_quit 		equ 	0xFF		; cmd: FF, NA
-    17                                  
-    18                                  org 100h
-    19                                  section .text 
+     1                                  ; -----------------------------------------------------------------------
+     2                                  ;  Copyright (C) 2023  Matt Westveld
+     3                                  ;
+     4                                  ;  This program is free software: you can redistribute it and/or modify
+     5                                  ;  it under the terms of the GNU General Public License as published by
+     6                                  ;  the Free Software Foundation, either version 3 of the License, or
+     7                                  ;  (at your option) any later version.
+     8                                  ;
+     9                                  ;  This program is distributed in the hope that it will be useful,
+    10                                  ;  but WITHOUT ANY WARRANTY; without even the implied warranty of
+    11                                  ;  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    12                                  ;  GNU General Public License for more details.
+    13                                  ;
+    14                                  ;  You should have received a copy of the GNU General Public License
+    15                                  ;  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+    16                                  ;
+    17                                  ; -----------------------------------------------------------------------
+    18                                  
+    19                                  [map symbols ssdw.map]
     20                                  
-    21                                  start:
-    22 00000000 E8EE01                  	call init_com
-    23                                  ; -----------------------------------------------------------------------		
-    24                                  get_frame:
-    25                                  	; wait for our frame startcode
-    26 00000003 E8B901                  	call recv_byte
-    27 00000006 3A06[0900]              	cmp al, [startcode]
-    28 0000000A 75F7                    	jne get_frame
-    29                                  
-    30                                  	; next 2 bytes are the length of the cmd + data (if any)
-    31 0000000C E8B001                  	call recv_byte
-    32 0000000F A2[0A00]                	mov [datalen], al
-    33 00000012 E8AA01                  	call recv_byte
-    34 00000015 A2[0B00]                	mov [datalen + 1], al
-    35 00000018 8B0E[0A00]              	mov cx, [datalen]
-    36 0000001C 81F90802                	cmp cx, 0x208
-    37 00000020 77E1                    	ja get_frame	; too big, something wrong, start over
-    38                                  
-    39                                  	; grab the data
-    40 00000022 BB[0000]                	mov bx, cmdbuf
-    41                                  .dataloop:
-    42 00000025 E89701                  	call recv_byte
-    43 00000028 8807                    	mov [bx],al
-    44 0000002A 43                      	inc bx
-    45 0000002B E2F8                    	loop .dataloop
-    46                                  
-    47                                  	; grab the checksum
-    48 0000002D E88F01                  	call recv_byte
-    49 00000030 A2[0C00]                	mov [chksum],al
-    50 00000033 E88901                  	call recv_byte
-    51 00000036 A2[0D00]                	mov [chksum+1],al	
-    52                                  
-    53 00000039 BE[0000]                	mov si, cmdbuf
-    54 0000003C 8B0E[0A00]              	mov cx, [datalen]
-    55 00000040 E86301                  	call compute_checksum
-    56                                  
-    57 00000043 3B1E[0C00]              	cmp bx, [chksum]
-    58                                  	; if checksum match:
-    59                                  	; 	send startcode + 2
-    60                                  	; 	startcode XOR= 1
-    61                                  	; 	process cmd
+    21                                  bits 16
+    22                                  cpu 8086
+    23                                  
+    24                                  args_len	equ		0x80	; location of argument data length
+    25                                  args_data	equ		0x81	; location of argument data 
+    26                                  
+    27                                  cmd_recv_sector equ 	0x00		; cmd: 00, sector # (0-17) , NA
+    28                                  cmd_write_track equ 	0x01		; cmd: 01, drive #, track #, head #, sectors to write
+    29                                  cmd_reset 		equ 	0x08		; cmd: 08, drive #
+    30                                  cmd_quit 		equ 	0xFF		; cmd: FF, NA
+    31                                  
+    32                                  org 100h
+    33                                  section .text 
+    34                                  
+    35                                  start:
+    36 00000000 E9FA00                  	jmp get_args
+    37                                  init:
+    38 00000003 E8FD02                  	call init_com
+    39                                  ; -----------------------------------------------------------------------		
+    40                                  get_frame:
+    41                                  	; wait for our frame startcode
+    42 00000006 E8B202                  	call recv_byte
+    43 00000009 3A06[1600]              	cmp al, [startcode]
+    44 0000000D 75F7                    	jne get_frame
+    45                                  
+    46                                  	; next 2 bytes are the length of the cmd + data (if any)
+    47 0000000F E8A902                  	call recv_byte
+    48 00000012 A2[1700]                	mov [datalen], al
+    49 00000015 E8A302                  	call recv_byte
+    50 00000018 A2[1800]                	mov [datalen + 1], al
+    51 0000001B 8B0E[1700]              	mov cx, [datalen]
+    52 0000001F 81F90802                	cmp cx, 0x208
+    53 00000023 77E1                    	ja get_frame	; too big, something wrong, start over
+    54                                  
+    55                                  	; grab the data
+    56 00000025 BB[0000]                	mov bx, cmdbuf
+    57                                  .dataloop:
+    58 00000028 E89002                  	call recv_byte
+    59 0000002B 8807                    	mov [bx],al
+    60 0000002D 43                      	inc bx
+    61 0000002E E2F8                    	loop .dataloop
     62                                  
-    63 00000047 751E                    	jne badchk
-    64 00000049 B02E                    	mov al, '.'	; print period
-    65 0000004B E82B00                  	call printc
-    66 0000004E A0[0900]                	mov al, [startcode]
-    67 00000051 0402                    	add al, 2
-    68 00000053 E88801                  	call send_byte
-    69 00000056 A0[0900]                	mov al, [startcode]
-    70 00000059 3401                    	xor al, 1
-    71 0000005B A2[0900]                	mov [startcode], al
-    72 0000005E B80000                  	mov ax,0
-    73 00000061 E89600                  	call proc_cmd
-    74 00000064 E99CFF                  	jmp get_frame
-    75                                  
-    76                                  	; otherwise:
-    77                                  	; 	send startcode XOR=1 + 2
-    78                                  	; 	loop back and wait again
-    79                                  
-    80                                  badchk:	
-    81 00000067 B078                    	mov al, 'x'		; print x
-    82 00000069 E80D00                  	call printc
-    83 0000006C A0[0900]                	mov al, [startcode]
-    84 0000006F 3401                    	xor al, 1
-    85 00000071 0402                    	add al, 2
-    86 00000073 E86801                  	call send_byte
-    87 00000076 E98AFF                  	jmp get_frame
-    88                                  
-    89                                  %include "print.asm"
+    63                                  	; grab the checksum
+    64 00000030 E88802                  	call recv_byte
+    65 00000033 A2[1900]                	mov [chksum],al
+    66 00000036 E88202                  	call recv_byte
+    67 00000039 A2[1A00]                	mov [chksum+1],al	
+    68                                  
+    69 0000003C BE[0000]                	mov si, cmdbuf
+    70 0000003F 8B0E[1700]              	mov cx, [datalen]
+    71 00000043 E85C02                  	call compute_checksum
+    72                                  
+    73 00000046 3B1E[1900]              	cmp bx, [chksum]
+    74                                  	; if checksum match:
+    75                                  	; 	send startcode + 2
+    76                                  	; 	startcode XOR= 1
+    77                                  	; 	process cmd
+    78                                  
+    79 0000004A 751E                    	jne badchk
+    80 0000004C B02E                    	mov al, '.'	; print period
+    81 0000004E E82B00                  	call printc
+    82 00000051 A0[1600]                	mov al, [startcode]
+    83 00000054 0402                    	add al, 2
+    84 00000056 E89102                  	call send_byte
+    85 00000059 A0[1600]                	mov al, [startcode]
+    86 0000005C 3401                    	xor al, 1
+    87 0000005E A2[1600]                	mov [startcode], al
+    88 00000061 B80000                  	mov ax,0
+    89 00000064 E88F01                  	call proc_cmd
+    90 00000067 E99CFF                  	jmp get_frame
+    91                                  
+    92                                  	; otherwise:
+    93                                  	; 	send startcode XOR=1 + 2
+    94                                  	; 	loop back and wait again
+    95                                  
+    96                                  badchk:	
+    97 0000006A B078                    	mov al, 'x'		; print x
+    98 0000006C E80D00                  	call printc
+    99 0000006F A0[1600]                	mov al, [startcode]
+   100 00000072 3401                    	xor al, 1
+   101 00000074 0402                    	add al, 2
+   102 00000076 E87102                  	call send_byte
+   103 00000079 E98AFF                  	jmp get_frame
+   104                                  
+   105                                  %include "print.asm"
      1                              <1> ;=========================================================================
      2                              <1> ; Pulled on 2023/2/8 from bios.asm here:
      3                              <1> ; https://github.com/skiselev/8088_bios
@@ -152,16 +140,16 @@
     35                              <1> ;	none
     36                              <1> ;-------------------------------------------------------------------------
     37                              <1> printc:
-    38 00000079 9C                  <1> 	pushf
-    39 0000007A 50                  <1> 	push	ax
-    40 0000007B 53                  <1> 	push	bx
-    41 0000007C B40E                <1> 	mov	ah,0Eh
-    42 0000007E B30F                <1> 	mov	bl,0Fh
-    43 00000080 CD10                <1> 	int	10h
-    44 00000082 5B                  <1> 	pop	bx
-    45 00000083 58                  <1> 	pop	ax
-    46 00000084 9D                  <1> 	popf
-    47 00000085 C3                  <1> 	ret
+    38 0000007C 9C                  <1> 	pushf
+    39 0000007D 50                  <1> 	push	ax
+    40 0000007E 53                  <1> 	push	bx
+    41 0000007F B40E                <1> 	mov	ah,0Eh
+    42 00000081 B30F                <1> 	mov	bl,0Fh
+    43 00000083 CD10                <1> 	int	10h
+    44 00000085 5B                  <1> 	pop	bx
+    45 00000086 58                  <1> 	pop	ax
+    46 00000087 9D                  <1> 	popf
+    47 00000088 C3                  <1> 	ret
     48                              <1> 
     49                              <1> ;=========================================================================
     50                              <1> ; printz - print ASCIIZ string to the console
@@ -171,29 +159,29 @@
     54                              <1> ;	none
     55                              <1> ;-------------------------------------------------------------------------
     56                              <1> printz:
-    57 00000086 9C                  <1> 	pushf
-    58 00000087 50                  <1> 	push	ax
-    59 00000088 53                  <1> 	push	bx
-    60 00000089 56                  <1> 	push	si
-    61 0000008A 1E                  <1> 	push	ds
-    62 0000008B 0E                  <1> 	push	cs
-    63 0000008C 1F                  <1> 	pop	ds
-    64 0000008D FC                  <1> 	cld
+    57 00000089 9C                  <1> 	pushf
+    58 0000008A 50                  <1> 	push	ax
+    59 0000008B 53                  <1> 	push	bx
+    60 0000008C 56                  <1> 	push	si
+    61 0000008D 1E                  <1> 	push	ds
+    62 0000008E 0E                  <1> 	push	cs
+    63 0000008F 1F                  <1> 	pop	ds
+    64 00000090 FC                  <1> 	cld
     65                              <1> .1:
-    66 0000008E AC                  <1> 	lodsb
-    67 0000008F 08C0                <1> 	or	al,al
-    68 00000091 7409                <1> 	jz	.exit
-    69 00000093 B40E                <1> 	mov	ah,0Eh
-    70 00000095 B30F                <1> 	mov	bl,0Fh
-    71 00000097 CD10                <1> 	int	10h
-    72 00000099 E9F2FF              <1> 	jmp	.1
+    66 00000091 AC                  <1> 	lodsb
+    67 00000092 08C0                <1> 	or	al,al
+    68 00000094 7409                <1> 	jz	.exit
+    69 00000096 B40E                <1> 	mov	ah,0Eh
+    70 00000098 B30F                <1> 	mov	bl,0Fh
+    71 0000009A CD10                <1> 	int	10h
+    72 0000009C E9F2FF              <1> 	jmp	.1
     73                              <1> .exit:
-    74 0000009C 1F                  <1> 	pop	ds
-    75 0000009D 5E                  <1> 	pop	si
-    76 0000009E 5B                  <1> 	pop	bx
-    77 0000009F 58                  <1> 	pop	ax
-    78 000000A0 9D                  <1> 	popf
-    79 000000A1 C3                  <1> 	ret
+    74 0000009F 1F                  <1> 	pop	ds
+    75 000000A0 5E                  <1> 	pop	si
+    76 000000A1 5B                  <1> 	pop	bx
+    77 000000A2 58                  <1> 	pop	ax
+    78 000000A3 9D                  <1> 	popf
+    79 000000A4 C3                  <1> 	ret
     80                              <1> 
     81                              <1> ;=========================================================================
     82                              <1> ; print_hex - print 16-bit number in hexadecimal
@@ -203,11 +191,11 @@
     86                              <1> ;	none
     87                              <1> ;-------------------------------------------------------------------------
     88                              <1> print_hex:
-    89 000000A2 86C4                <1> 	xchg	al,ah
-    90 000000A4 E80600              <1> 	call	print_byte		; print the upper byte
-    91 000000A7 86C4                <1> 	xchg	al,ah
-    92 000000A9 E80100              <1> 	call	print_byte		; print the lower byte
-    93 000000AC C3                  <1> 	ret
+    89 000000A5 86C4                <1> 	xchg	al,ah
+    90 000000A7 E80600              <1> 	call	print_byte		; print the upper byte
+    91 000000AA 86C4                <1> 	xchg	al,ah
+    92 000000AC E80100              <1> 	call	print_byte		; print the lower byte
+    93 000000AF C3                  <1> 	ret
     94                              <1> 
     95                              <1> ;=========================================================================
     96                              <1> ; print_byte - print a byte in hexadecimal
@@ -217,17 +205,17 @@
    100                              <1> ;	none
    101                              <1> ;-------------------------------------------------------------------------
    102                              <1> print_byte:
-   103 000000AD D0C0                <1> 	rol	al,1
-   104 000000AF D0C0                <1> 	rol	al,1
-   105 000000B1 D0C0                <1> 	rol	al,1
-   106 000000B3 D0C0                <1> 	rol	al,1
-   107 000000B5 E82D00              <1> 	call	print_digit
-   108 000000B8 D0C0                <1> 	rol	al,1
-   109 000000BA D0C0                <1> 	rol	al,1
-   110 000000BC D0C0                <1> 	rol	al,1
-   111 000000BE D0C0                <1> 	rol	al,1
-   112 000000C0 E82200              <1> 	call	print_digit
-   113 000000C3 C3                  <1> 	ret
+   103 000000B0 D0C0                <1> 	rol	al,1
+   104 000000B2 D0C0                <1> 	rol	al,1
+   105 000000B4 D0C0                <1> 	rol	al,1
+   106 000000B6 D0C0                <1> 	rol	al,1
+   107 000000B8 E82D00              <1> 	call	print_digit
+   108 000000BB D0C0                <1> 	rol	al,1
+   109 000000BD D0C0                <1> 	rol	al,1
+   110 000000BF D0C0                <1> 	rol	al,1
+   111 000000C1 D0C0                <1> 	rol	al,1
+   112 000000C3 E82200              <1> 	call	print_digit
+   113 000000C6 C3                  <1> 	ret
    114                              <1> 
    115                              <1> ;=========================================================================
    116                              <1> ; print_dec - print 16-bit number in decimal
@@ -237,28 +225,28 @@
    120                              <1> ;	none
    121                              <1> ;-------------------------------------------------------------------------
    122                              <1> print_dec:
-   123 000000C4 50                  <1> 	push	ax
-   124 000000C5 51                  <1> 	push	cx
-   125 000000C6 52                  <1> 	push	dx
-   126 000000C7 B90A00              <1> 	mov	cx,10		; base = 10
-   127 000000CA E80400              <1> 	call	.print_rec
-   128 000000CD 5A                  <1> 	pop	dx
-   129 000000CE 59                  <1> 	pop	cx
-   130 000000CF 58                  <1> 	pop	ax
-   131 000000D0 C3                  <1> 	ret
+   123 000000C7 50                  <1> 	push	ax
+   124 000000C8 51                  <1> 	push	cx
+   125 000000C9 52                  <1> 	push	dx
+   126 000000CA B90A00              <1> 	mov	cx,10		; base = 10
+   127 000000CD E80400              <1> 	call	.print_rec
+   128 000000D0 5A                  <1> 	pop	dx
+   129 000000D1 59                  <1> 	pop	cx
+   130 000000D2 58                  <1> 	pop	ax
+   131 000000D3 C3                  <1> 	ret
    132                              <1> 
    133                              <1> .print_rec:			; print all digits recursively
-   134 000000D1 52                  <1> 	push	dx
-   135 000000D2 31D2                <1> 	xor	dx,dx		; DX = 0
-   136 000000D4 F7F1                <1> 	div	cx		; AX = DX:AX / 10, DX = DX:AX % 10
-   137 000000D6 3D0000              <1> 	cmp	ax,0
-   138 000000D9 7403                <1> 	je	.below10
-   139 000000DB E8F3FF              <1> 	call	.print_rec	; print number / 10 recursively
+   134 000000D4 52                  <1> 	push	dx
+   135 000000D5 31D2                <1> 	xor	dx,dx		; DX = 0
+   136 000000D7 F7F1                <1> 	div	cx		; AX = DX:AX / 10, DX = DX:AX % 10
+   137 000000D9 3D0000              <1> 	cmp	ax,0
+   138 000000DC 7403                <1> 	je	.below10
+   139 000000DE E8F3FF              <1> 	call	.print_rec	; print number / 10 recursively
    140                              <1> .below10:
-   141 000000DE 89D0                <1> 	mov	ax,dx		; reminder is in DX
-   142 000000E0 E80200              <1> 	call	print_digit	; print reminder
-   143 000000E3 5A                  <1> 	pop	dx
-   144 000000E4 C3                  <1> 	ret
+   141 000000E1 89D0                <1> 	mov	ax,dx		; reminder is in DX
+   142 000000E3 E80200              <1> 	call	print_digit	; print reminder
+   143 000000E6 5A                  <1> 	pop	dx
+   144 000000E7 C3                  <1> 	ret
    145                              <1> 
    146                              <1> ;=========================================================================
    147                              <1> ; print_digit - print hexadecimal digit
@@ -268,251 +256,398 @@
    151                              <1> ;	none
    152                              <1> ;-------------------------------------------------------------------------
    153                              <1> print_digit:
-   154 000000E5 50                  <1> 	push	ax
-   155 000000E6 53                  <1> 	push	bx
-   156 000000E7 240F                <1> 	and	al,0Fh
-   157 000000E9 0430                <1> 	add	al,'0'			; convert to ASCII
-   158 000000EB 3C39                <1> 	cmp	al,'9'			; less or equal 9?
-   159 000000ED 7602                <1> 	jna	.1
-   160 000000EF 0407                <1> 	add	al,'A'-'9'-1		; a hex digit
+   154 000000E8 50                  <1> 	push	ax
+   155 000000E9 53                  <1> 	push	bx
+   156 000000EA 240F                <1> 	and	al,0Fh
+   157 000000EC 0430                <1> 	add	al,'0'			; convert to ASCII
+   158 000000EE 3C39                <1> 	cmp	al,'9'			; less or equal 9?
+   159 000000F0 7602                <1> 	jna	.1
+   160 000000F2 0407                <1> 	add	al,'A'-'9'-1		; a hex digit
    161                              <1> .1:
-   162 000000F1 B40E                <1> 	mov	ah,0Eh			; Int 10 function 0Eh - teletype output
-   163 000000F3 B307                <1> 	mov	bl,07h			; just in case we're in graphic mode
-   164 000000F5 CD10                <1> 	int	10h
-   165 000000F7 5B                  <1> 	pop	bx
-   166 000000F8 58                  <1> 	pop	ax
-   167 000000F9 C3                  <1> 	ret
+   162 000000F4 B40E                <1> 	mov	ah,0Eh			; Int 10 function 0Eh - teletype output
+   163 000000F6 B307                <1> 	mov	bl,07h			; just in case we're in graphic mode
+   164 000000F8 CD10                <1> 	int	10h
+   165 000000FA 5B                  <1> 	pop	bx
+   166 000000FB 58                  <1> 	pop	ax
+   167 000000FC C3                  <1> 	ret
    168                              <1> 
-    90                                  
-    91                                  ; -----------------------------------------------------------------------		
-    92                                  proc_cmd:
-    93 000000FA A0[0000]                	mov al, [cmdbuf]	; get cmd
-    94 000000FD 3C00                    	cmp al, cmd_recv_sector
-    95 000000FF 747E                    	je copy_sector
-    96 00000101 3C01                    	cmp al, cmd_write_track
-    97 00000103 7416                    	je write_track
-    98 00000105 3C08                    	cmp al, cmd_reset
-    99 00000107 7503E98C00              	je reset_drive
-   100 0000010C 3CFF                    	cmp al, cmd_quit
-   101 0000010E 7503E90901              	je bye
-   102                                  	; unknown command
-   103 00000113 B03F                    	mov al, '?'	; print ?
-   104 00000115 E861FF                  	call printc
-   105 00000118 E9E8FE                  	jmp get_frame
    106                                  
    107                                  ; -----------------------------------------------------------------------		
-   108                                  ; cmd: 01, drive #, track #, head #, sectors to write
-   109                                  write_track:
-   110 0000011B E83A00                  	call print_track
-   111 0000011E 8A16[0100]              	mov dl,[cmdbuf+1]		; drive #
-   112 00000122 8A2E[0200]              	mov ch,[cmdbuf+2]		; track
-   113 00000126 8A36[0300]              	mov dh,[cmdbuf+3]		; head
-   114 0000012A A0[0400]                	mov al,[cmdbuf+4]		; sectors to write
-   115 0000012D E88500                  	call write_sectors
-   116 00000130 88E0                    	mov al, ah
-   117 00000132 E8A900                  	call send_byte			; send the return code
-   118 00000135 3C00                    	cmp al, 0
-   119 00000137 7503E9C7FE              	je get_frame
-   120 0000013C 50                      	push ax
-   121 0000013D B045                    	mov al, 'E'
-   122 0000013F E837FF                  	call printc
-   123 00000142 B052                    	mov al, 'R'
-   124 00000144 E832FF                  	call printc
-   125 00000147 58                      	pop ax
-   126                                  	;mov ah, al
-   127 00000148 E862FF                  	call print_byte
-   128 0000014B B00A                    	mov al, 0x0A
-   129 0000014D E829FF                  	call printc
-   130 00000150 B00D                    	mov al, 0x0D
-   131 00000152 E824FF                  	call printc
-   132 00000155 E9ABFE                  	jmp get_frame
-   133                                  
-   134                                  ; -----------------------------------------------------------------------
-   135                                  ; prints the track info
-   136                                  ; -----------------------------------------------------------------------		
-   137                                  print_track:
-   138                                  	; drive
-   139 00000158 A0[0100]                	mov al,[cmdbuf+1]
-   140 0000015B E84FFF                  	call print_byte
-   141 0000015E B03A                    	mov al, ':'
-   142 00000160 E816FF                  	call printc
-   143                                  	; track
-   144 00000163 A0[0200]                	mov al,[cmdbuf+2]	
-   145 00000166 E844FF                  	call print_byte
-   146 00000169 B03A                    	mov al, ':'
-   147 0000016B E80BFF                  	call printc
-   148                                  	; head
-   149 0000016E A0[0300]                	mov al,[cmdbuf+3]	
-   150 00000171 E839FF                  	call print_byte
-   151 00000174 B00A                    	mov al, 0x0A
-   152 00000176 E800FF                  	call printc
-   153 00000179 B00D                    	mov al, 0x0D
-   154 0000017B E8FBFE                  	call printc
-   155 0000017E C3                      	ret
-   156                                  
-   157                                  ; -----------------------------------------------------------------------
-   158                                  ; Copies the 512 byte sector from the recv buffer to the track buffer	
-   159                                  ; ----------------------------------------------------------------------		
-   160                                  copy_sector:
-   161 0000017F B80000                  	mov ax, 0
-   162 00000182 8A26[0100]              	mov ah, [cmdbuf+1]	; sector #  (* 256 since ah)
-   163 00000186 D0C4                    	rol ah, 1 				; * 2
-   164                                  	; now copy from secbuf to trackbuf
-   165 00000188 B90002                  	mov cx, 512
-   166 0000018B 05[0802]                	add ax, trackbuf	
-   167 0000018E 89C7                    	mov di, ax
-   168 00000190 BE[0800]                	mov si, secbuf			; source
-   169 00000193 F3A4                    	rep movsb
-   170 00000195 E96BFE                  	jmp get_frame
-   171                                  
-   172                                  ; -----------------------------------------------------------------------
-   173                                  ; Resets the drive - makes it find track 0 again	
-   174                                  ; ----------------------------------------------------------------------			
-   175                                  reset_drive:
-   176 00000198 B400                    	mov ah, 0
-   177 0000019A 8A16[0100]              	mov dl, [cmdbuf+1]
-   178 0000019E CD13                    	int 0x13
-   179 000001A0 88E0                    	mov al, ah
-   180 000001A2 E83900                  	call send_byte			; send the return code
-   181 000001A5 C3                      	ret	
-   182                                  
-   183                                  ; -----------------------------------------------------------------------		
-   184                                  ; BSD Checksum code
-   185                                  ; IN:  	DS:SI = points to data to checksum
-   186                                  ;		CX = length of data to checksum
-   187                                  ; OUT:	BX = checksum
-   188                                  ; -----------------------------------------------------------------------		
-   189                                  compute_checksum:
-   190 000001A6 FC                          cld
-   191 000001A7 BB0000                      mov bx, 0
-   192 000001AA B80000                      mov ax, 0
-   193                                  .loop:
-   194 000001AD AC                          lodsb
-   195 000001AE D1CB                        ror bx, 1
-   196 000001B0 01C3                        add bx, ax
-   197 000001B2 E2F9                    	loop .loop
-   198 000001B4 C3                      	ret
-   199                                  
-   200                                  ; -----------------------------------------------------------------------
-   201                                  ; Writes a track
-   202                                  ; IN:  
-   203                                  ;	AL - # of sectors	
-   204                                  ;	DL - drive
-   205                                  ;	DH - head
-   206                                  ;	CH - track
-   207                                  ; ----------------------------------------------------------------------
-   208                                  write_sectors:
-   209 000001B5 B403                    	mov ah, 3				; writing
-   210 000001B7 B101                    	mov cl, 1				; sector to start with
-   211 000001B9 BB[0802]                	mov bx, trackbuf  		;  
-   212 000001BC CD13                    	int 0x13
-   213 000001BE C3                      	ret
-   214                                  
-   215                                  ; -----------------------------------------------------------------------	
-   216                                  ; return next serial byte in al
-   217                                  ; -----------------------------------------------------------------------	
-   218                                  
-   219                                  recv_byte:
-   220                                  	; return next serial byte in al
-   221                                    	; wait for an available byte
-   222 000001BF 52                       	push dx
-   223                                  	outb comio+4,2  ; set RTS
-     4 000001C0 BAFC03              <1>  mov dx, %1
-     5 000001C3 B002                <1>  mov al, %2
-     6 000001C5 EE                  <1>  out dx, al
-   224                                  	.loop:
-   225                                  	inb comio+5
-    10 000001C6 BAFD03              <1>  mov dx, %1
-    11 000001C9 EC                  <1>  in al, dx
-   226 000001CA 2401                    	and al, 0x01
-   227 000001CC 3C00                    	cmp al, 0	
-   228 000001CE 74F6                    	je .loop
-   229                                  	inb comio
-    10 000001D0 BAF803              <1>  mov dx, %1
-    11 000001D3 EC                  <1>  in al, dx
-   230 000001D4 50                      	push ax
-   231                                  	outb comio+4,0  ; clear RTS
-     4 000001D5 BAFC03              <1>  mov dx, %1
-     5 000001D8 B000                <1>  mov al, %2
-     6 000001DA EE                  <1>  out dx, al
-   232 000001DB 58                      	pop ax
-   233 000001DC 5A                      	pop dx
-   234 000001DD C3                      	ret
-   235                                  	
-   236                                  ; -----------------------------------------------------------------------	
-   237                                  ; send serial byte from AL
-   238                                  ; -----------------------------------------------------------------------	
-   239                                  send_byte:	
-   240 000001DE 52                      	push dx
-   241 000001DF 50                      	push ax
-   242                                  	.loop:
-   243                                  	inb comio+5
-    10 000001E0 BAFD03              <1>  mov dx, %1
-    11 000001E3 EC                  <1>  in al, dx
-   244 000001E4 2420                    	and al, 0x20
-   245 000001E6 3C00                    	cmp al, 0				; transmit buffer ready?
-   246 000001E8 74F6                    	je .loop
-   247 000001EA 58                      	pop ax
-   248 000001EB BAF803                  	mov dx, comio
-   249 000001EE EE                      	out dx, al
-   250 000001EF 5A                      	pop dx
-   251 000001F0 C3                      	ret
-   252                                  	
-   253                                  ; -----------------------------------------------------------------------
-   254                                  ;	Setup com port
-   255                                  ; -----------------------------------------------------------------------
-   256                                  init_com:
-   257                                  	outb comio+1, 0x00
-     4 000001F1 BAF903              <1>  mov dx, %1
-     5 000001F4 B000                <1>  mov al, %2
-     6 000001F6 EE                  <1>  out dx, al
-   258                                  	outb comio+3, 0x80 
-     4 000001F7 BAFB03              <1>  mov dx, %1
-     5 000001FA B080                <1>  mov al, %2
-     6 000001FC EE                  <1>  out dx, al
-   259                                  	outb comio+0, com_mult 	; 30=2400 baud, 0C=9600, 
-     4 000001FD BAF803              <1>  mov dx, %1
-     5 00000200 B001                <1>  mov al, %2
-     6 00000202 EE                  <1>  out dx, al
-   260                                  						; 03=38400 02=57600 01=115200
-   261                                  	outb comio+1, 0x00 	;                 
-     4 00000203 BAF903              <1>  mov dx, %1
-     5 00000206 B000                <1>  mov al, %2
-     6 00000208 EE                  <1>  out dx, al
-   262                                  	outb comio+3, 0x03 	; 8n1
-     4 00000209 BAFB03              <1>  mov dx, %1
-     5 0000020C B003                <1>  mov al, %2
-     6 0000020E EE                  <1>  out dx, al
-   263                                  	outb comio+2, 0xC7 
-     4 0000020F BAFA03              <1>  mov dx, %1
-     5 00000212 B0C7                <1>  mov al, %2
-     6 00000214 EE                  <1>  out dx, al
-   264                                  	outb comio+4, 0x00 	; IRQs disabled, etc
-     4 00000215 BAFC03              <1>  mov dx, %1
-     5 00000218 B000                <1>  mov al, %2
-     6 0000021A EE                  <1>  out dx, al
-   265                                  						; bit 0 = DTR, bit 1 = RTS
-   266 0000021B C3                      	ret
-   267                                  
-   268                                  ; -----------------------------------------------------------------------	
-   269                                  ;	Exit to dos
-   270                                  ; -----------------------------------------------------------------------	
-   271                                  bye:
-   272 0000021C B8004C                  	mov ax, 0x4c00
-   273 0000021F CD21                    	int 0x21
-   274                                  	
-   275                                  ; -----------------------------------------------------------------------	
-   276                                  ; -----------------------------------------------------------------------	
-   277                                  
-   278                                  section .data
-   279                                    ; program data
-   280 00000000 303030303030303024        hexbuf db "00000000$"
-   281 00000009 90                        startcode db 0x90
-   282 0000000A 0000                      datalen dw 0x0000
-   283 0000000C FFFF                      chksum dw 0xFFFF
-   284                                    
-   285                                  section .bss
-   286                                  	; uninitialized data
-   287 00000000 ????????????????        	cmdbuf resb 8			; buffer for serial cmd
-   288 00000008 <res 200h>              	secbuf resb 512			; buffer for serial sector data
-   289 00000208 <res 2400h>               	trackbuf resb 9216  	; for storing 1 track (1.44mb = 18 sector tracks = 512 * 18)
+   108                                  ; get and process the command line args
+   109                                  ; -----------------------------------------------------------------------	
+   110                                  get_args:
+   111 000000FD BB8100                  	mov bx, args_data
+   112 00000100 B90000                  	mov cx, 0
+   113                                  
+   114                                  	; grab 2 single-digit args
+   115 00000103 E8C400                  	call skip_delim	
+   116 00000106 8A07                    	mov al, [bx]
+   117 00000108 E8B300                  	call is_num
+   118 0000010B 7203E9DD00              	jnc print_usage		; if first arg not a number, print usage and exit
+   119 00000110 A2[1B00]                	mov [port_arg], al
+   120 00000113 43                      	inc bx	
+   121 00000114 8A07                    	mov al, [bx]
+   122 00000116 E8BD00                  	call test_delim
+   123 00000119 7403E9CF00              	jne print_usage		; if more than just 1 char, print usage and exit
+   124                                  
+   125 0000011E E8A900                  	call skip_delim
+   126 00000121 8A07                    	mov al, [bx]
+   127 00000123 E89800                  	call is_num
+   128 00000126 7203E9C200              	jnc print_usage		; if first arg not a number, print usage and exit
+   129 0000012B A2[1C00]                	mov [baud_arg], al
+   130 0000012E 43                      	inc bx	
+   131 0000012F 8A07                    	mov al, [bx]
+   132 00000131 E8A200                  	call test_delim
+   133 00000134 7403E9B400              	jne print_usage		; if more than just 1 char, print usage and exit
+   134                                  
+   135                                  	; process args
+   136                                  	; com port
+   137                                  first_arg:	
+   138 00000139 A0[1B00]                	mov al, [port_arg]
+   139 0000013C 3C31                    	cmp al, '1'
+   140 0000013E 7509                    	jne .test2
+   141 00000140 C706[1D00]F803          	mov [com_io], word 0x3F8
+   142 00000146 E92700                  	jmp next_arg
+   143                                  .test2:	
+   144 00000149 3C32                    	cmp al, '2'
+   145 0000014B 7509                    	jne .test3
+   146 0000014D C706[1D00]F802          	mov [com_io], word 0x2F8
+   147 00000153 E91A00                  	jmp next_arg
+   148                                  .test3:	
+   149 00000156 3C33                    	cmp al, '3'
+   150 00000158 7509                    	jne .test4
+   151 0000015A C706[1D00]E803          	mov [com_io], word 0x3E8
+   152 00000160 E90D00                  	jmp next_arg
+   153                                  .test4:	
+   154 00000163 3C34                    	cmp al, '4'
+   155 00000165 7403E98300              	jne print_usage
+   156 0000016A C706[1D00]E802          	mov [com_io], word 0x2E8
+   157                                  
+   158                                  	; baud
+   159                                  next_arg:
+   160                                  	; process args
+   161 00000170 A0[1C00]                	mov al, [baud_arg]
+   162 00000173 3C31                    	cmp al, '1'
+   163 00000175 7508                    	jne .test2
+   164 00000177 C606[1F00]30            	mov [baud_mult], byte 0x30
+   165 0000017C E93C00                  	jmp .done_args
+   166                                  .test2:	
+   167 0000017F 3C32                    	cmp al, '2'
+   168 00000181 7508                    	jne .test3
+   169 00000183 C606[1F00]0C            	mov [baud_mult], byte 0x0C
+   170 00000188 E93000                  	jmp .done_args
+   171                                  .test3:	
+   172 0000018B 3C33                    	cmp al, '3'
+   173 0000018D 7508                    	jne .test4
+   174 0000018F C606[1F00]06            	mov [baud_mult], byte 0x06
+   175 00000194 E92400                  	jmp .done_args
+   176                                  .test4:	
+   177 00000197 3C34                    	cmp al, '4'
+   178 00000199 7508                    	jne .test5
+   179 0000019B C606[1F00]03            	mov [baud_mult], byte 0x03
+   180 000001A0 E91800                  	jmp .done_args
+   181                                  .test5:	
+   182 000001A3 3C35                    	cmp al, '5'
+   183 000001A5 7508                    	jne .test6
+   184 000001A7 C606[1F00]02            	mov [baud_mult], byte 0x02
+   185 000001AC E90C00                  	jmp .done_args
+   186                                  .test6:	
+   187 000001AF 3C36                    	cmp al, '6'
+   188 000001B1 753A                    	jne print_usage
+   189 000001B3 C606[1F00]01            	mov [baud_mult], byte 0x01
+   190 000001B8 E90000                  	jmp .done_args		
+   191                                  
+   192                                  .done_args:
+   193 000001BB E945FE                  	jmp init
+   194                                  
+   195                                  ; set carry if the ascii digit in al is a number 1-9
+   196                                  is_num:
+   197 000001BE 3C31                    	cmp al, '1'
+   198 000001C0 7206                    	jb .nope
+   199 000001C2 3C39                    	cmp al, '9'
+   200 000001C4 7702                    	ja .nope
+   201 000001C6 F9                      	stc
+   202 000001C7 C3                      	ret
+   203                                  .nope:
+   204 000001C8 F8                      	clc
+   205 000001C9 C3                      	ret
+   206                                  
+   207                                  skip_delim:
+   208 000001CA 8A07                    	mov al, [bx]
+   209 000001CC E80700                  	call test_delim
+   210 000001CF 7504                    	jne .end
+   211 000001D1 43                      	inc bx
+   212 000001D2 E9F5FF                  	jmp skip_delim
+   213                                  .end:
+   214 000001D5 C3                      	ret
+   215                                  
+   216                                  ; -----------------------------------------------------------------------		
+   217                                  ; Test if AL contains a DOS delimiter
+   218                                  ; -----------------------------------------------------------------------
+   219                                  test_delim:
+   220 000001D6 3C20                    	cmp al, ' '
+   221 000001D8 7412                    	je .yup
+   222 000001DA 3C2C                    	cmp al, ','
+   223 000001DC 740E                    	je .yup
+   224 000001DE 3C09                    	cmp al, 0x09
+   225 000001E0 740A                    	je .yup
+   226 000001E2 3C3B                    	cmp al, ';'
+   227 000001E4 7406                    	je .yup
+   228 000001E6 3C3D                    	cmp al, '='
+   229 000001E8 7402                    	je .yup
+   230 000001EA 3C0D                    	cmp al, 0x0D
+   231                                  .yup:
+   232 000001EC C3                      	ret	
+   233                                  
+   234                                  
+   235                                  ; -----------------------------------------------------------------------		
+   236                                  ; print usage text, then exit
+   237                                  ; -----------------------------------------------------------------------	
+   238                                  print_usage:
+   239 000001ED BE[0000]                	mov si, usage_text
+   240 000001F0 E896FE                  	call printz
+   241 000001F3 E94401                  	jmp bye
+   242                                  
+   243                                  ; -----------------------------------------------------------------------		
+   244                                  ; process the command from the buffer
+   245                                  ; -----------------------------------------------------------------------	
+   246                                  proc_cmd:
+   247 000001F6 A0[0000]                	mov al, [cmdbuf]	; get cmd
+   248 000001F9 3C00                    	cmp al, cmd_recv_sector
+   249 000001FB 747E                    	je copy_sector
+   250 000001FD 3C01                    	cmp al, cmd_write_track
+   251 000001FF 7416                    	je write_track
+   252 00000201 3C08                    	cmp al, cmd_reset
+   253 00000203 7503E98C00              	je reset_drive
+   254 00000208 3CFF                    	cmp al, cmd_quit
+   255 0000020A 7503E92B01              	je bye
+   256                                  	; unknown command
+   257 0000020F B03F                    	mov al, '?'	; print ?
+   258 00000211 E868FE                  	call printc
+   259 00000214 E9EFFD                  	jmp get_frame
+   260                                  
+   261                                  ; -----------------------------------------------------------------------		
+   262                                  ; cmd: 01, drive #, track #, head #, sectors to write
+   263                                  ; -----------------------------------------------------------------------		
+   264                                  write_track:
+   265 00000217 E83A00                  	call print_track
+   266 0000021A 8A16[0100]              	mov dl,[cmdbuf+1]		; drive #
+   267 0000021E 8A2E[0200]              	mov ch,[cmdbuf+2]		; track
+   268 00000222 8A36[0300]              	mov dh,[cmdbuf+3]		; head
+   269 00000226 A0[0400]                	mov al,[cmdbuf+4]		; sectors to write
+   270 00000229 E88500                  	call write_sectors
+   271 0000022C 88E0                    	mov al, ah
+   272 0000022E E8B900                  	call send_byte			; send the return code
+   273 00000231 3C00                    	cmp al, 0
+   274 00000233 7503E9CEFD              	je get_frame
+   275 00000238 50                      	push ax					; print ER and the return code
+   276 00000239 B045                    	mov al, 'E'
+   277 0000023B E83EFE                  	call printc
+   278 0000023E B052                    	mov al, 'R'
+   279 00000240 E839FE                  	call printc
+   280 00000243 58                      	pop ax
+   281                                  	;mov ah, al
+   282 00000244 E869FE                  	call print_byte
+   283 00000247 B00A                    	mov al, 0x0A
+   284 00000249 E830FE                  	call printc
+   285 0000024C B00D                    	mov al, 0x0D
+   286 0000024E E82BFE                  	call printc
+   287 00000251 E9B2FD                  	jmp get_frame
+   288                                  
+   289                                  ; -----------------------------------------------------------------------
+   290                                  ; prints the track info
+   291                                  ; -----------------------------------------------------------------------		
+   292                                  print_track:
+   293                                  	; drive
+   294 00000254 A0[0100]                	mov al,[cmdbuf+1]
+   295 00000257 E856FE                  	call print_byte
+   296 0000025A B03A                    	mov al, ':'
+   297 0000025C E81DFE                  	call printc
+   298                                  	; track
+   299 0000025F A0[0200]                	mov al,[cmdbuf+2]	
+   300 00000262 E84BFE                  	call print_byte
+   301 00000265 B03A                    	mov al, ':'
+   302 00000267 E812FE                  	call printc
+   303                                  	; head
+   304 0000026A A0[0300]                	mov al,[cmdbuf+3]	
+   305 0000026D E840FE                  	call print_byte
+   306 00000270 B00A                    	mov al, 0x0A
+   307 00000272 E807FE                  	call printc
+   308 00000275 B00D                    	mov al, 0x0D
+   309 00000277 E802FE                  	call printc
+   310 0000027A C3                      	ret
+   311                                  
+   312                                  ; -----------------------------------------------------------------------
+   313                                  ; Copies the 512 byte sector from the recv buffer to the track buffer	
+   314                                  ; ----------------------------------------------------------------------		
+   315                                  copy_sector:
+   316 0000027B B80000                  	mov ax, 0
+   317 0000027E 8A26[0100]              	mov ah, [cmdbuf+1]	; sector #  (* 256 since ah)
+   318 00000282 D0C4                    	rol ah, 1 				; * 2
+   319                                  	; now copy from secbuf to trackbuf
+   320 00000284 B90002                  	mov cx, 512
+   321 00000287 05[0802]                	add ax, trackbuf	
+   322 0000028A 89C7                    	mov di, ax
+   323 0000028C BE[0800]                	mov si, secbuf			; source
+   324 0000028F F3A4                    	rep movsb
+   325 00000291 E972FD                  	jmp get_frame
+   326                                  
+   327                                  ; -----------------------------------------------------------------------
+   328                                  ; Resets the drive - makes it find track 0 again	
+   329                                  ; ----------------------------------------------------------------------			
+   330                                  reset_drive:
+   331 00000294 B400                    	mov ah, 0
+   332 00000296 8A16[0100]              	mov dl, [cmdbuf+1]
+   333 0000029A CD13                    	int 0x13
+   334 0000029C 88E0                    	mov al, ah
+   335 0000029E E84900                  	call send_byte			; send the return code
+   336 000002A1 C3                      	ret	
+   337                                  
+   338                                  ; -----------------------------------------------------------------------		
+   339                                  ; BSD Checksum code
+   340                                  ; IN:  	DS:SI = points to data to checksum
+   341                                  ;		CX = length of data to checksum
+   342                                  ; OUT:	BX = checksum
+   343                                  ; -----------------------------------------------------------------------		
+   344                                  compute_checksum:
+   345 000002A2 FC                          cld
+   346 000002A3 BB0000                      mov bx, 0
+   347 000002A6 B80000                      mov ax, 0
+   348                                  .loop:
+   349 000002A9 AC                          lodsb
+   350 000002AA D1CB                        ror bx, 1
+   351 000002AC 01C3                        add bx, ax
+   352 000002AE E2F9                    	loop .loop
+   353 000002B0 C3                      	ret
+   354                                  
+   355                                  ; -----------------------------------------------------------------------
+   356                                  ; Writes a track
+   357                                  ; IN:  
+   358                                  ;	AL - # of sectors	
+   359                                  ;	DL - drive
+   360                                  ;	DH - head
+   361                                  ;	CH - track
+   362                                  ; ----------------------------------------------------------------------
+   363                                  write_sectors:
+   364 000002B1 B403                    	mov ah, 3				; writing
+   365 000002B3 B101                    	mov cl, 1				; sector to start with
+   366 000002B5 BB[0802]                	mov bx, trackbuf  		;  
+   367 000002B8 CD13                    	int 0x13
+   368 000002BA C3                      	ret
+   369                                  
+   370                                  ; -----------------------------------------------------------------------	
+   371                                  ; return next serial byte in al
+   372                                  ; -----------------------------------------------------------------------	
+   373                                  
+   374                                  recv_byte:
+   375                                  	; return next serial byte in al
+   376                                    	; wait for an available byte
+   377 000002BB 52                       	push dx
+   378 000002BC 8B16[1D00]              	mov dx, [com_io]
+   379 000002C0 81C20400                	add dx, 4
+   380 000002C4 B002                    	mov al, 0x02
+   381 000002C6 EE                      	out dx, al		; set RTS
+   382                                  
+   383                                  .loop:
+   384 000002C7 8B16[1D00]              	mov dx, [com_io]
+   385 000002CB 81C20500                	add dx, 5
+   386 000002CF EC                      	in al, dx
+   387 000002D0 2401                    	and al, 0x01
+   388 000002D2 3C00                    	cmp al, 0	
+   389 000002D4 74F1                    	je .loop
+   390                                  
+   391 000002D6 8B16[1D00]              	mov dx, [com_io]
+   392 000002DA EC                      	in al, dx			; get byte
+   393 000002DB 50                      	push ax
+   394                                  
+   395 000002DC 8B16[1D00]              	mov dx, [com_io]
+   396 000002E0 81C20400                	add dx, 4
+   397 000002E4 B000                    	mov al, 0x00
+   398 000002E6 EE                      	out dx, al		; clear RTS
+   399                                  	
+   400 000002E7 58                      	pop ax
+   401 000002E8 5A                      	pop dx
+   402 000002E9 C3                      	ret
+   403                                  	
+   404                                  ; -----------------------------------------------------------------------	
+   405                                  ; send serial byte from AL
+   406                                  ; -----------------------------------------------------------------------	
+   407                                  send_byte:	
+   408 000002EA 52                      	push dx
+   409 000002EB 50                      	push ax
+   410                                  	.loop:
+   411 000002EC 8B16[1D00]              	mov dx, [com_io]
+   412 000002F0 81C20500                	add dx, 5
+   413 000002F4 EC                      	in al, dx
+   414 000002F5 2420                    	and al, 0x20
+   415 000002F7 3C00                    	cmp al, 0				; transmit buffer ready?
+   416 000002F9 74F1                    	je .loop
+   417 000002FB 58                      	pop ax
+   418 000002FC 8B16[1D00]              	mov dx, [com_io]
+   419 00000300 EE                      	out dx, al
+   420 00000301 5A                      	pop dx
+   421 00000302 C3                      	ret
+   422                                  	
+   423                                  ; -----------------------------------------------------------------------
+   424                                  ;	Setup com port
+   425                                  ; -----------------------------------------------------------------------
+   426                                  init_com:
+   427 00000303 8B16[1D00]              	mov dx, [com_io]
+   428 00000307 81C20100                	add dx, 1			; com_io + 1
+   429 0000030B B000                    	mov al, 0x00
+   430 0000030D EE                      	out dx, al
+   431                                  
+   432 0000030E 81C20200                	add dx, 2			; com_io + 2
+   433 00000312 B080                    	mov al, 0x80
+   434 00000314 EE                      	out dx, al
+   435                                  
+   436 00000315 8B16[1D00]              	mov dx, [com_io]		; com_io
+   437 00000319 A0[1F00]                	mov al, [baud_mult]
+   438 0000031C EE                      	out dx, al	
+   439                                  
+   440 0000031D 81C20100                	add dx, 1				; com_io + 1
+   441 00000321 B000                    	mov al, 0x00
+   442 00000323 EE                      	out dx, al
+   443                                  
+   444 00000324 81C20200                	add dx, 2				; com_io + 3
+   445 00000328 B003                    	mov al, 0x03
+   446 0000032A EE                      	out dx, al
+   447                                  
+   448 0000032B 81EA0100                	sub dx, 1				; com_io + 2
+   449 0000032F B0C7                    	mov al, 0xC7
+   450 00000331 EE                      	out dx, al
+   451                                  
+   452 00000332 81C20200                	add dx, 2				; com_io + 4
+   453 00000336 B000                    	mov al, 0x00
+   454 00000338 EE                      	out dx, al
+   455                                  
+   456 00000339 C3                      	ret
+   457                                  
+   458                                  ; -----------------------------------------------------------------------	
+   459                                  ;	Exit to dos
+   460                                  ; -----------------------------------------------------------------------	
+   461                                  bye:
+   462 0000033A B8004C                  	mov ax, 0x4c00
+   463 0000033D CD21                    	int 0x21
+   464                                  	
+   465                                  ; -----------------------------------------------------------------------	
+   466                                  ; -----------------------------------------------------------------------	
+   467                                  
+   468                                  section .data
+   469                                    ; program data
+   470 00000000 55736167653A205365-       usage_text db "Usage: See README.TXT",0
+   470 00000009 6520524541444D452E-
+   470 00000012 54585400           
+   471 00000016 90                        startcode db 0x90
+   472 00000017 0000                      datalen dw 0x0000
+   473 00000019 FFFF                      chksum dw 0xFFFF
+   474 0000001B 31                        port_arg db "1"
+   475 0000001C 31                        baud_arg db "1"
+   476 0000001D F803                      com_io dw 0x03F8
+   477 0000001F 0C                        baud_mult db 0x0C
+   478                                    
+   479                                  section .bss
+   480                                  	; uninitialized data
+   481 00000000 ????????????????        	cmdbuf resb 8			; buffer for serial cmd
+   482 00000008 <res 200h>              	secbuf resb 512			; buffer for serial sector data
+   483 00000208 <res 2400h>               	trackbuf resb 9216  	; for storing 1 track (1.44mb = 18 sector tracks = 512 * 18)
