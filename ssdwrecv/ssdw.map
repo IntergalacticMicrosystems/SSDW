@@ -1,0 +1,91 @@
+
+- NASM Map file ---------------------------------------------------------------
+
+Source file:  ssdw.asm
+Output file:  ..\..\misc\tempb-files\ssdw.com
+
+-- Symbols --------------------------------------------------------------------
+
+---- No Section ---------------------------------------------------------------
+
+Value     Name
+00000080  args_len
+00000081  args_data
+00000000  cmd_recv_sector
+00000001  cmd_write_track
+00000008  cmd_reset
+000000FF  cmd_quit
+
+
+---- Section .text ------------------------------------------------------------
+
+Real              Virtual           Name
+             100               100  start
+             103               103  init
+             106               106  get_frame
+             128               128  get_frame.dataloop
+             16A               16A  badchk
+             17C               17C  printc
+             189               189  printz
+             191               191  printz.1
+             19F               19F  printz.exit
+             1A5               1A5  print_hex
+             1B0               1B0  print_byte
+             1C7               1C7  print_dec
+             1D4               1D4  print_dec.print_rec
+             1E1               1E1  print_dec.below10
+             1E8               1E8  print_digit
+             1F4               1F4  print_digit.1
+             1FD               1FD  get_args
+             239               239  first_arg
+             249               249  first_arg.test2
+             256               256  first_arg.test3
+             263               263  first_arg.test4
+             270               270  next_arg
+             27F               27F  next_arg.test2
+             28B               28B  next_arg.test3
+             297               297  next_arg.test4
+             2A3               2A3  next_arg.test5
+             2AF               2AF  next_arg.test6
+             2BB               2BB  next_arg.done_args
+             2BE               2BE  is_num
+             2C8               2C8  is_num.nope
+             2CA               2CA  skip_delim
+             2D5               2D5  skip_delim.end
+             2D6               2D6  test_delim
+             2EC               2EC  test_delim.yup
+             2ED               2ED  print_usage
+             2F6               2F6  proc_cmd
+             317               317  write_track
+             354               354  print_track
+             37B               37B  copy_sector
+             394               394  reset_drive
+             3A2               3A2  compute_checksum
+             3A9               3A9  compute_checksum.loop
+             3B1               3B1  write_sectors
+             3BB               3BB  recv_byte
+             3C7               3C7  recv_byte.loop
+             3EA               3EA  send_byte
+             3EC               3EC  send_byte.loop
+             403               403  init_com
+             43A               43A  bye
+
+---- Section .data ------------------------------------------------------------
+
+Real              Virtual           Name
+             440               440  usage_text
+             456               456  startcode
+             457               457  datalen
+             459               459  chksum
+             45B               45B  port_arg
+             45C               45C  baud_arg
+             45D               45D  com_io
+             45F               45F  baud_mult
+
+---- Section .bss -------------------------------------------------------------
+
+Real              Virtual           Name
+             460               460  cmdbuf
+             468               468  secbuf
+             668               668  trackbuf
+
