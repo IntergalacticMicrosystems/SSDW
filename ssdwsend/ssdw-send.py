@@ -18,9 +18,11 @@
 # Needs:
 # pip install pyserial
 # pip install pynput
+# pip install py2exe
 
 import serial
-from pynput.keyboard import Key, Listener
+from pynput.keyboard import Key, Listener, _win32
+from pynput.mouse import _win32
 import os
 import argparse
 import sys
