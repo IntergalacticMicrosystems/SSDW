@@ -25,6 +25,8 @@ pip install pynput
 
 Disk images need to be raw full-size images.
 
+The diskette needs to be formatted in the correct format first!
+
 ssdw-send.py sets the track/head/sectors based on the file size
 
 **Example usage:**
