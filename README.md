@@ -8,9 +8,11 @@ A tool to push disk images from a modern PC to a vintage DOS 8086+ system.
 
 ssdw.com runs on the vintage PC
 
-ssdw-send.py runs on the modern PC
+ssdw-send runs on the modern PC
 
 null modem cable between them
+
+**NEW:** ssdw-boot - bootstraps the ssdw.com file to a DOS PC over serial
 
 **On the modern PC you'll likely need Python 3.6+**
 
