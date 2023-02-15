@@ -18,6 +18,7 @@ null modem cable between them
 ```
 pip install pyserial
 pip install pynput
+pip install py2exe
 ```
 
 Disk images need to be raw full-size images.

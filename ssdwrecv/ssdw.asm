@@ -32,6 +32,16 @@ cmd_quit 		equ 	0xFF		; cmd: FF, NA
 org 100h
 section .text 
 
+	; check ourselves before we wreck ourselves
+	mov cx, [file_len]
+	mov si, 0x100
+	call compute_checksum
+	cmp bx, [file_cksum]
+	je start
+	mov si, bad_cksum_text
+	call printz
+	jmp bye
+
 start:
 	jmp get_args
 init:
@@ -138,7 +148,7 @@ first_arg:
 	mov al, [port_arg]
 	cmp al, '1'
 	jne .test2
-	mov [com_io], word 0x3F8
+	mov [com_io], word 0x3F8	
 	jmp next_arg
 .test2:	
 	cmp al, '2'
@@ -154,7 +164,7 @@ first_arg:
 	cmp al, '4'
 	jne print_usage
 	mov [com_io], word 0x2E8
-
+	nop							; filler to prevent a 1A in the code that breaks bootstrap
 	; baud
 next_arg:
 	; process args
@@ -335,6 +345,7 @@ reset_drive:
 	call send_byte			; send the return code
 	ret	
 
+
 ; -----------------------------------------------------------------------		
 ; BSD Checksum code
 ; IN:  	DS:SI = points to data to checksum
@@ -468,6 +479,7 @@ bye:
 section .data
   ; program data
   usage_text db "Usage: See README.TXT",0
+  bad_cksum_text db "BAD FILE CHECKSUM",0
   startcode db 0x90
   datalen dw 0x0000
   chksum dw 0xFFFF
@@ -475,6 +487,9 @@ section .data
   baud_arg db "1"
   com_io dw 0x03F8
   baud_mult db 0x0C
+  ; !! Make sure these are at the end of the file !!
+  file_len dw 0x55AA
+  file_cksum dw 0x55AA
   
 section .bss
 	; uninitialized data
