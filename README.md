@@ -14,6 +14,9 @@ null modem cable between them
 
 **On the modern PC you'll likely need Python 3.6+**
 
+**Or just download a zip with it packaged up here:**
+[binaries-DOS-and-WIN7-32.zip](https://github.com/IntergalacticMicrosystems/SSDW/raw/main/binaries-DOS-and-WIN7-32.zip)
+
 **To install the packages needed, you can use pip:**
 ```
 pip install pyserial
@@ -22,6 +25,8 @@ pip install py2exe
 ```
 
 Disk images need to be raw full-size images.
+
+The diskette needs to be formatted in the correct format first!
 
 ssdw-send.py sets the track/head/sectors based on the file size
 
